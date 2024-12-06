@@ -37,7 +37,9 @@ async def get_my_bots(
         bots = "-----------------------------------\n"
         bots += "\n".join(
             [
-                f"🆔: {bot["id"]}\n🔑 {bot.get("token")[:-20] + " * * * * *"}\nUlangan kanal: {bot['channel']['name']}"
+                f"Nomi: {bot.get('name')}\n@{bot.get('username')}\n🆔: {bot["id"]}\n🔑"
+                f"{bot.get("token")[:-20] + "* * * * *"}\nUlangan kanal: {bot['channel']['name']}\n"
+                f"-----------------------------------"
                 for bot in my_bots
             ]
         )
