@@ -5,10 +5,12 @@ from .keyboards import MainBotKeyboards, MainBotInlineKeyboards
 from .settings import get_settings, Settings
 from .state_manager import get_state_manager, MainBotStates, StateManager
 from .task_manager import get_task_manager, TaskManager
+from .rate_limiter import get_rate_limiter_from_memory, RateLimiter
 
 bot_settings: Settings = get_settings()
 state: StateManager = get_state_manager()
 task_manager: TaskManager = get_task_manager()
+rate_limiter: RateLimiter = get_rate_limiter_from_memory(bot_settings.MAIN_BOT_ID, bot_settings.MAIN_BOT_USERNAME)
 
 
 async def start_handler(event: Message, backend, *args, **kwargs):
@@ -25,13 +27,15 @@ async def start_handler(event: Message, backend, *args, **kwargs):
         backend,
     )
     if response:
-        await event.respond(
-            "Assalomu alaykum, Xush kelibsiz!",
+        await rate_limiter.respond(
+            event=event,
+            message="Assalomu alaykum, Xush kelibsiz!",
             buttons=MainBotKeyboards.main_keyboard,
         )
     else:
-        await event.respond(
-            "Siz allaqachon ro'yxatdan o'tgansiz!",
+        await rate_limiter.respond(
+            event=event,
+            message="Siz allaqachon ro'yxatdan o'tgansiz!",
             buttons=MainBotKeyboards.main_keyboard,
         )
 
@@ -40,16 +44,22 @@ async def start_handler(event: Message, backend, *args, **kwargs):
 
 async def fetch_bots_handler(event, backend, *args, **kwargs):
     bots = await get_my_bots(event.chat.id, backend, with_string=True)
-    await event.respond(
-        f"Mening botlarim:\n{bots}" if bots else "Sizda botlar yo'q",
+    await rate_limiter.respond(
+        event=event,
+        message=f"Mening botlarim:\n{bots}" if bots else "Sizda botlar yo'q",
         buttons=MainBotKeyboards.main_keyboard,
     )
 
 
 async def fetch_channels_handler(event, backend, *args, **kwargs):
     my_channels = await get_my_channels(event.chat.id, backend, with_string=True)
-    await event.respond(
-        f"Mening kanallarim:\n{my_channels}" if my_channels else "Sizda kanallar yo'q",
+    await rate_limiter.respond(
+        event=event,
+        message=(
+            f"Mening kanallarim:\n{my_channels}"
+            if my_channels
+            else "Sizda kanallar yo'q"
+        ),
         buttons=MainBotKeyboards.main_keyboard,
     )
 
@@ -57,8 +67,10 @@ async def fetch_channels_handler(event, backend, *args, **kwargs):
 # Add channel handlers
 async def enter_channel_id(event, *args, **kwargs):
     state.set_state(event.chat.id, MainBotStates.ENTER_CHANNEL_ID)
-    await event.respond(
-        "Kanal ID sini kiriting:", buttons=MainBotKeyboards.cancel_keyboard
+    await rate_limiter.respond(
+        event=event,
+        message="Kanal ID sini kiriting:",
+        buttons=MainBotKeyboards.cancel_keyboard,
     )
 
 
@@ -69,8 +81,10 @@ async def enter_channel_name(event, backend, *args, **kwargs):
         data={"channel_id": event.message.message},
         update=True,
     )
-    await event.respond(
-        "Endi kanal nomini kiriting:", buttons=MainBotKeyboards.cancel_keyboard
+    await rate_limiter.respond(
+        event=event,
+        message="Endi kanal nomini kiriting:",
+        buttons=MainBotKeyboards.cancel_keyboard,
     )
 
 
@@ -91,12 +105,15 @@ async def complete_add_channel(event, backend, *args, **kwargs):
         },
     )
     if status_code == 201:
-        await event.respond(
-            "Kanal muvaffaqiyatli qo'shildi!", buttons=MainBotKeyboards.main_keyboard
+        await rate_limiter.respond(
+            event=event,
+            message="Kanal muvaffaqiyatli qo'shildi!",
+            buttons=MainBotKeyboards.main_keyboard,
         )
     else:
-        await event.respond(
-            "Kanal qo'shishda xatolik yuz berdi!",
+        await rate_limiter.respond(
+            event=event,
+            message="Kanal qo'shishda xatolik yuz berdi!",
             buttons=MainBotKeyboards.main_keyboard,
         )
     state.reset_state(event.chat.id)
@@ -105,8 +122,10 @@ async def complete_add_channel(event, backend, *args, **kwargs):
 # Add bot handlers
 async def enter_bot_token(event, *args, **kwargs):
     state.set_state(event.chat.id, MainBotStates.ENTER_BOT_TOKEN)
-    await event.respond(
-        "Bot tokenini kiriting:", buttons=MainBotKeyboards.cancel_keyboard
+    await rate_limiter.respond(
+        event=event,
+        message="Bot tokenini kiriting:",
+        buttons=MainBotKeyboards.cancel_keyboard,
     )
 
 
@@ -115,7 +134,11 @@ async def assign_channel_to_bot(event, backend, *args, **kwargs):
         bot_settings.TELEGRAM_GET_ME + f"{event.message.message}/getMe"
     )
     if status_code != 200:
-        await event.respond("Bot topilmadi!", buttons=MainBotKeyboards.main_keyboard)
+        await rate_limiter.respond(
+            event=event,
+            message="Bot topilmadi!",
+            buttons=MainBotKeyboards.main_keyboard,
+        )
         state.reset_state(event.chat.id)
         return
     bot_data = result.get("result")
@@ -135,13 +158,16 @@ async def assign_channel_to_bot(event, backend, *args, **kwargs):
         event.chat.id, bot_data.get("id"), backend
     )
     if not inline_keyboard:
-        await event.respond(
-            "Sizda kanallar yo'q! avval kanal qo'shing",
+        await rate_limiter.respond(
+            event=event,
+            message="Sizda kanallar yo'q! avval kanal qo'shing",
             buttons=MainBotKeyboards.main_keyboard,
         )
         state.reset_state(event.chat.id)
         return
-    await event.respond("Botga ulash uchun kanal tanlang:", buttons=inline_keyboard)
+    await rate_limiter.respond(
+        event=event, message="Botga ulash uchun kanal tanlang:", buttons=inline_keyboard
+    )
 
 
 async def complete_add_bot(event, backend, *args, **kwargs):
@@ -169,14 +195,18 @@ async def complete_add_bot(event, backend, *args, **kwargs):
             is_running=response.get("is_running"),
         )
         main_bot.bots.append(bot)
-        task_manager.add_task(response.get("id"), bot.start())
+        task_manager.add_task(response.get("id"), TaskManager.BOTS, bot.start())
 
-        await event.respond(
-            "Bot muvaffaqiyatli qo'shildi!", buttons=MainBotKeyboards.main_keyboard
+        await rate_limiter.respond(
+            event=event,
+            message="Bot muvaffaqiyatli qo'shildi!",
+            buttons=MainBotKeyboards.main_keyboard,
         )
     else:
-        await event.respond(
-            "Bot qo'shishda xatolik yuz berdi!", buttons=MainBotKeyboards.main_keyboard
+        await rate_limiter.respond(
+            event=event,
+            message="Bot qo'shishda xatolik yuz berdi!",
+            buttons=MainBotKeyboards.main_keyboard,
         )
     state.reset_state(event.chat.id)
 
@@ -187,8 +217,9 @@ async def change_bot_status_handler(event, backend, *args, **kwargs):
     my_bots, status_code = await get_my_bots(event.chat.id, backend)
 
     if not any(my_bots):
-        await event.respond(
-            "Sizda ishga tushirilgan botlar yo'q!",
+        await rate_limiter.respond(
+            event=event,
+            message="Sizda ishga tushirilgan botlar yo'q!",
             buttons=MainBotKeyboards.main_keyboard,
         )
         state.reset_state(event.chat.id)
@@ -197,21 +228,34 @@ async def change_bot_status_handler(event, backend, *args, **kwargs):
     change_bot_status_keyboard = (
         await MainBotInlineKeyboards.change_bot_status_keyboard(my_bots)
     )
-    await event.respond(
-        "To'xtatilayotgan botni tanlang:",
+    await rate_limiter.respond(
+        event=event,
+        message="To'xtatilayotgan botni tanlang:",
         buttons=change_bot_status_keyboard,
     )
+
+
+async def send_40_messages(event, *args, **kwargs):
+    for i in range(40):
+        await rate_limiter.respond(event=event, message=f"Message {i}")
+    return True
 
 
 async def cancel_handler(event, *args, **kwargs):
     state_data = state.get_state_with_data(event.chat.id)
     if state_data.get("state") == MainBotStates.NOTHING:
-        await event.respond(
-            "Bekor qilishga hech nima yo'q!", buttons=MainBotKeyboards.main_keyboard
+        await rate_limiter.respond(
+            event=event,
+            message="Bekor qilishga hech nima yo'q!",
+            buttons=MainBotKeyboards.main_keyboard,
         )
         return
     state.reset_state(event.chat.id)
-    await event.respond("Amal bekor qilindi!", buttons=MainBotKeyboards.main_keyboard)
+    await rate_limiter.respond(
+        event=event,
+        message="Amal bekor qilindi!",
+        buttons=MainBotKeyboards.main_keyboard,
+    )
     return
 
 
@@ -229,7 +273,9 @@ async def handle_callback(event, backend, *args, **kwargs):
             data={"bot_id": data[1], "channel_id": data[2]},
             update=True,
         )
-        await event.respond("Botga ulash uchun kanal tanlandi!")
+        await rate_limiter.respond(
+            event=event, message="Botga ulash uchun kanal tanlandi!"
+        )
         await complete_add_bot(event, backend)
 
     elif (
@@ -241,27 +287,30 @@ async def handle_callback(event, backend, *args, **kwargs):
             data={"is_running": bool(int(data[2]))},
         )
         if status_code == 200:
-            await event.respond(
-                (
+            await rate_limiter.respond(
+                event=event,
+                message=(
                     f"Bot @{response.get('username')} to'xtatildi!"
                     if data[2] == "0"
                     else f"Bot @{response.get('username')} ishga tushirildi!"
                 ),
                 buttons=MainBotKeyboards.main_keyboard,
             )
-            if data[2] == "0":
-                task_manager.remove_task(data[1])
-            else:
-                from .models import get_main_bot, MainBot
+            from .models import get_main_bot, MainBot
 
-                main_bot: MainBot = get_main_bot()
-                task_manager.add_task(data[1], main_bot.get_bot_object(data[1]).start())
-            await event.delete()
+            main_bot: MainBot = get_main_bot()
+            if data[2] == "0":
+                main_bot.bots.remove(main_bot.get_bot_object(data[1]))
+                task_manager.remove_task(data[1], TaskManager.BOTS)
+            else:
+                task_manager.add_task(
+                    data[1], TaskManager.BOTS, main_bot.get_bot_object(data[1]).start()
+                )
 
         state.reset_state(event.chat.id)
 
     else:
-        await event.delete()
+        await rate_limiter.delete(event=event)
         state.reset_state(event.chat.id)
 
 
