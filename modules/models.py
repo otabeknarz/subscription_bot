@@ -9,10 +9,9 @@ from telethon import TelegramClient, events
 from .task_manager import get_task_manager, TaskManager
 from . import handlers
 from .redis_connection import get_redis, RedisConnection
-
-# local modules
 from .settings import get_settings, Settings
-from .state_manager import get_state_manager, StateManager, MainBotStates
+from .state_manager import get_state_manager, StateManager
+from .rate_limiter import get_rate_limiter_from_memory, RateLimiter
 
 # Define global settings
 bot_settings: Settings = get_settings()
@@ -98,6 +97,8 @@ class Bot:
         self.backend: BackendClient = BackendClient()
         self.client: TelegramClient = client
         self.is_running: bool = is_running
+        self.rate_limiter: RateLimiter | None = None
+        self.is_first_message = True
 
     def __str__(self):
         return f"Bot {self.bot_id}"
@@ -142,6 +143,7 @@ class MainBot(Bot):
         "Bot qo'shish": handlers.enter_bot_token,
         "Bekor qilish": handlers.cancel_handler,
         "Bot larimni boshqarish": handlers.change_bot_status_handler,
+        "40 ta xabar yubor": handlers.send_40_messages,
     }
 
     STATE_COMMANDS = {
@@ -168,11 +170,17 @@ class MainBot(Bot):
     def setup_handlers(self):
         # handle all messages
         @self.client.on(events.NewMessage())
-        async def dispatcher_handler(event):
+        async def dispatcher_handler(event: events.NewMessage.Event):
             state_data = state.get_state_with_data(event.chat.id)
             if not await MainBot.COMMANDS.get(
                 event.message.message, handlers.do_nothing
             )(event, self.backend):
+                if self.is_first_message:
+                    self.is_first_message = False
+                    periodic_check_task = get_rate_limiter_from_memory(
+                        bot_id=self.bot_id, bot_username=self.bot_username
+                    ).periodic_check
+                    task_manager.add_task(self.bot_id, TaskManager.RATE_LIMITER, periodic_check_task())
                 return
             if state_data:
                 await MainBot.STATE_COMMANDS.get(
@@ -204,15 +212,26 @@ class MainBot(Bot):
         )
 
     async def start_bots(self):
-        """Start all initialized TelegramBot instances"""
+        """
+        This function is the main loop that starts all bots and all tasks
+        """
         # Start main bot
-        task_manager.add_task(self.bot_id, self.start())
+        task_manager.add_task(self.bot_id, TaskManager.BOTS, self.start())
+        # Add rate limiter task
+        self.rate_limiter = get_rate_limiter_from_memory(bot_id=self.bot_id, bot_username=self.bot_username)
+        # task_manager.add_task(self.bot_id, TaskManager.RATE_LIMITER, self.rate_limiter.periodic_check())
+
         # Add all bots to task manager
         for bot in self.bots:
             if bot.is_running:
-                task_manager.add_task(bot.bot_id, bot.start())
+                # Start bot
+                task_manager.add_task(bot.bot_id, TaskManager.BOTS, bot.start())
+                # Add rate limiter task
+                bot.rate_limiter = get_rate_limiter_from_memory(bot_id=bot.bot_id, bot_username=bot.bot_username)
+                # task_manager.add_task(bot.bot_id, TaskManager.RATE_LIMITER, bot.rate_limiter.periodic_check())
+
         # Run all tasks
-        await task_manager.run_tasks()
+        await task_manager.run_all_tasks_in_main_loop()
 
     async def refresh_bots(self):
         """Reload all bots"""
@@ -228,7 +247,7 @@ class MainBot(Bot):
             logger.error(f"Error fetching bots: {str(e)}")
         await self.start_bots()
 
-    def get_bot_object(self, bot_id: str):
+    def get_bot_object(self, bot_id: str) -> "TelegramBot":
         return next(bot for bot in self.bots if bot.bot_id == bot_id)
 
 
@@ -277,7 +296,7 @@ class TelegramBot(Bot):
         @self.client.on(events.NewMessage(pattern="token"))
         async def send_token(event):
             # Example of async backend request while handling telegram message
-            await event.respond(f"Token: <code>{self.bot_token}</code>")
+            await event.respond(f"Token: <code>{self.bot_token}</code>", parse_mode="html")
 
         @self.client.on(events.NewMessage(pattern="sleep"))
         async def sleep_handler(event):
@@ -285,14 +304,3 @@ class TelegramBot(Bot):
             await asyncio.sleep(10)
             await event.respond("Slept for 10 seconds")
 
-    # async def periodic_task(self, interval: int = 60):
-    #     """Example of periodic background task"""
-    #     while True:
-    #         try:
-    #             # Make periodic backend request
-    #             data = await self.backend.fetch_data('/api/status')
-    #             logger.info(f"Periodic task data: {data}")
-    #             await asyncio.sleep(interval)
-    #         except Exception as e:
-    #             logger.error(f"Error in periodic task: {str(e)}")
-    #             await asyncio.sleep(5)  # Short sleep on error
