@@ -10,39 +10,56 @@ class TaskManager:
     Manager class that manages all tasks in the main loop
     """
 
-    def __init__(self):
-        self.tasks = {}
+    # Task groups
+    BOTS: str = "BOTS"
+    RATE_LIMITER: str = "RL"
 
-    async def run_task(self, task_id: str, task):
+    def __init__(self):
+        self.tasks: dict = {
+            self.RATE_LIMITER: {},
+            self.BOTS: {},
+        }
+
+    async def run_task(self, task_id: str, task_group: str, task):
         try:
             logger.info(f"Running task {task}")
             await task
         except asyncio.CancelledError:
             logger.info(f"Task {task_id} has been cancelled.")
         finally:
-            self.tasks.pop(task_id)
+            self.tasks.get(task_group).pop(task_id)
             logger.info(f"Task {task_id} has been completed.")
-            del self.tasks[task_id]
 
-    def add_task(self, bot_id: str, task):
-        if bot_id in self.tasks.keys():
+    def add_task(self, task_id: str, task_group: str, task_obj):
+        if task_id in self.tasks.get(task_group).keys():
             return False
         loop = asyncio.get_running_loop()
-        task = loop.create_task(self.run_task(bot_id, task), name=bot_id)
-        self.tasks[bot_id] = task
+        task = loop.create_task(self.run_task(task_id, task_group, task_obj), name=task_id)
+        self.tasks.get(task_group)[task_id] = task
         return True
 
-    def remove_task(self, bot_id: str):
-        if bot_id in self.tasks.keys():
-            task = self.tasks.pop(bot_id)
+    def remove_task(self, task_id: str, task_group: str):
+        if task_id in self.tasks.get(task_group).keys():
+            task = self.tasks.get(task_group).get(task_id)
             task.cancel()
-            logger.info(f"Task {bot_id} has been cancelled.")
+            logger.info(f"Task {task_id} has been cancelled.")
             return True
         else:
             return False
 
-    async def run_tasks(self):
-        await asyncio.gather(*self.tasks.values(), return_exceptions=True)
+    async def run_tasks_in_task_group(self, task_group: str):
+        await asyncio.gather(
+            *self.tasks.get(task_group).values(), return_exceptions=True
+        )
+
+    async def run_all_tasks_in_main_loop(self):
+        all_tasks = []
+        for value in self.tasks.values():
+            for task in value.values():
+                all_tasks.append(task)
+        await asyncio.gather(
+            *all_tasks, return_exceptions=True
+        )
 
 
 @lru_cache
