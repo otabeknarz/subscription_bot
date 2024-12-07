@@ -167,6 +167,24 @@ class MainBot(Bot):
         self.bots: list[TelegramBot] = []
         self.setup_handlers()
 
+    def __getitem__(self, item):
+        return self.get_bot_object(item)
+
+    def __len__(self):
+        return len(self.bots)
+
+    def __iter__(self):
+        return iter(self.bots)
+
+    def __contains__(self, item):
+        return any(bot.bot_id == item for bot in self.bots)
+
+    def __str__(self):
+        return f"Main Bot {self.bot_id}"
+
+    def __repr__(self):
+        return f"MainBot(bot_id={self.bot_id}, bot_token={self.bot_token}, bot_username={self.bot_username})"
+
     def setup_handlers(self):
         # handle all messages
         @self.client.on(events.NewMessage())
@@ -180,7 +198,9 @@ class MainBot(Bot):
                     periodic_check_task = get_rate_limiter_from_memory(
                         bot_id=self.bot_id, bot_username=self.bot_username
                     ).periodic_check
-                    task_manager.add_task(self.bot_id, TaskManager.RATE_LIMITER, periodic_check_task())
+                    task_manager.add_task(
+                        self.bot_id, TaskManager.RATE_LIMITER, periodic_check_task()
+                    )
                 return
             if state_data:
                 await MainBot.STATE_COMMANDS.get(
@@ -218,7 +238,9 @@ class MainBot(Bot):
         # Start main bot
         task_manager.add_task(self.bot_id, TaskManager.BOTS, self.start())
         # Add rate limiter task
-        self.rate_limiter = get_rate_limiter_from_memory(bot_id=self.bot_id, bot_username=self.bot_username)
+        self.rate_limiter = get_rate_limiter_from_memory(
+            bot_id=self.bot_id, bot_username=self.bot_username
+        )
         # task_manager.add_task(self.bot_id, TaskManager.RATE_LIMITER, self.rate_limiter.periodic_check())
 
         # Add all bots to task manager
@@ -227,7 +249,9 @@ class MainBot(Bot):
                 # Start bot
                 task_manager.add_task(bot.bot_id, TaskManager.BOTS, bot.start())
                 # Add rate limiter task
-                bot.rate_limiter = get_rate_limiter_from_memory(bot_id=bot.bot_id, bot_username=bot.bot_username)
+                bot.rate_limiter = get_rate_limiter_from_memory(
+                    bot_id=bot.bot_id, bot_username=bot.bot_username
+                )
                 # task_manager.add_task(bot.bot_id, TaskManager.RATE_LIMITER, bot.rate_limiter.periodic_check())
 
         # Run all tasks
@@ -296,11 +320,12 @@ class TelegramBot(Bot):
         @self.client.on(events.NewMessage(pattern="token"))
         async def send_token(event):
             # Example of async backend request while handling telegram message
-            await event.respond(f"Token: <code>{self.bot_token}</code>", parse_mode="html")
+            await event.respond(
+                f"Token: <code>{self.bot_token}</code>", parse_mode="html"
+            )
 
         @self.client.on(events.NewMessage(pattern="sleep"))
         async def sleep_handler(event):
             await event.respond("Sleeping for 10 seconds...")
             await asyncio.sleep(10)
             await event.respond("Slept for 10 seconds")
-
